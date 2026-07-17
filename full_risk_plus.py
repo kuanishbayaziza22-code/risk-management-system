@@ -466,7 +466,7 @@ with t_limits:
     port_limits['limit_ok'] = port_limits['excess'] <= 0
     st.dataframe(port_limits[['ticker','rating','current_weight','limit_rating','excess','limit_ok']].style.format({
         'current_weight':'{:.2f}%', 'limit_rating':'{:.2f}%', 'excess':'{:.2f}%'
-    }).applymap(lambda x: 'background-color: red' if x == False else '', subset=['limit_ok']))
+    }).map(lambda x: 'background-color: red' if x == False else '', subset=['limit_ok']))
 
     # Свободные лимиты по эмитентам (в деньгах)
     st.write("**Свободные лимиты по эмитентам (сколько можно докупить):**")
@@ -484,7 +484,7 @@ with t_limits:
     portfolio['issue_ok'] = portfolio['share_of_issue'] <= limit_issue
     st.dataframe(portfolio[['ticker','weight','position_value','issue_volume','share_of_issue','issue_ok']].style.format({
         'position_value':'{:,.0f}', 'issue_volume':'{:,.0f}', 'share_of_issue':'{:.2f}%'
-    }).applymap(lambda x: 'background-color: red' if x == False else '', subset=['issue_ok']))
+    }).map(lambda x: 'background-color: red' if x == False else '', subset=['issue_ok']))
     # Свободный лимит по эмиссии (в деньгах)
     st.write("**Свободный лимит по эмиссии (можно ещё купить):**")
     for _, row in portfolio.iterrows():
@@ -557,8 +557,8 @@ with t_stoploss:
     sl_df['TP_достигнут'] = sl_df['изменение_%'] >= sl_df['TP_%']
     st.dataframe(sl_df[['ticker','price_buy','current_price','изменение_%','SL_%','TP_%','SL_нарушено','TP_достигнут']].style.format({
         'price_buy':'{:.2f}', 'current_price':'{:.2f}', 'изменение_%':'{:.2f}%', 'SL_%':'{:.2f}%', 'TP_%':'{:.2f}%'
-    }).applymap(lambda x: 'background-color: red' if x == True else '', subset=['SL_нарушено'])\
-     .applymap(lambda x: 'background-color: green' if x == True else '', subset=['TP_достигнут']))
+    }).map(lambda x: 'background-color: red' if x == True else '', subset=['SL_нарушено'])\
+     .map(lambda x: 'background-color: green' if x == True else '', subset=['TP_достигнут']))
 
 # ================================================================
 # ВКЛАДКА 10: ЗАКЛЮЧЕНИЕ РИСК-МЕНЕДЖМЕНТА
