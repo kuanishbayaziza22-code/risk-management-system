@@ -190,12 +190,12 @@ def check_and_alert():
     # 1. Валютный лимит (USD)
     cur_curr = portfolio.groupby('currency')['weight'].sum() / total * 100
     if 'USD' in cur_curr.index and cur_curr['USD'] > 60:
-        messages.append(f"💸 <b>Валютный лимит нарушен!</b>\nДоля USD: {cur_curr['USD']:.2f}% (лимит: 60%)")
+        messages.append(f"💸 Валютный лимит нарушен!\nДоля USD: {cur_curr['USD']:.2f}% (лимит: 60%)")
 
     # 2. Секторный лимит (Energy)
     cur_sector = portfolio.groupby('sector')['weight'].sum() / total * 100
     if 'Energy' in cur_sector.index and cur_sector['Energy'] > 25:
-        messages.append(f"⚡ <b>Секторный лимит нарушен!</b>\nДоля Energy: {cur_sector['Energy']:.2f}% (лимит: 25%)")
+        messages.append(f"⚡ Секторный лимит нарушен!\nДоля Energy: {cur_sector['Energy']:.2f}% (лимит: 25%)")
 
     # 3. Стоп-лосс
     sl_df = portfolio.copy()
@@ -205,15 +205,15 @@ def check_and_alert():
     sl_violations = sl_df[sl_df['SL_нарушено']]
     if not sl_violations.empty:
         tickers = ', '.join(sl_violations['ticker'])
-        messages.append(f"🛑 <b>Стоп-лосс сработал!</b>\nПозиции: {tickers}")
+        messages.append(f"🛑 Стоп-лосс сработал!\nПозиции: {tickers}")
 
     # 4. VaR лимит
     metrics = calc_metrics(portfolio, prices, usd_kzt)
     if metrics['var95_pct'] > 5.0:
-        messages.append(f"📊 <b>Лимит VaR превышен!</b>\nТекущий VaR (95%): {metrics['var95_pct']:.2f}% (лимит: 5%)")
+        messages.append(f"📊 Лимит VaR превышен!\nТекущий VaR (95%): {metrics['var95_pct']:.2f}% (лимит: 5%)")
 
     if messages:
-        full_message = "🚨 <b>Предупреждение риск-мониторинга!</b>\n\n" + "\n\n".join(messages)
+        full_message = "🚨 Предупреждение риск-мониторинга!\n\n" + "\n\n".join(messages)
         msg_hash = hashlib.md5(full_message.encode()).hexdigest()
         today = datetime.now().strftime('%Y-%m-%d')
         if st.session_state.alert_sent.get(msg_hash) != today:
