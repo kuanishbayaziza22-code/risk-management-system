@@ -425,34 +425,41 @@ with t_vis:
                         color='Убыток, %', color_continuous_scale='RdYlGn_r')
     st.plotly_chart(fig_stress, use_container_width=True)
 
-    # ---------- 4. 3D ГЭП ----------
-    st.subheader("📊 3D ГЭП-анализ")
-    maturity_bins = ['До востребования', 'До 7 дней', '8-30 дней', '1-3 мес', '3-12 мес', '1-5 лет', 'более 5 лет']
-    bins_gap = [0, 0.02, 0.08, 0.25, 1, 5, 100, 1000]
-    portfolio_gap = portfolio.copy()
-    portfolio_gap['bin'] = pd.cut(portfolio_gap['maturity_years'], bins=bins_gap, labels=maturity_bins, right=False)
-    assets_by_bin = portfolio_gap.groupby('bin')['weight'].sum().reindex(maturity_bins, fill_value=0)
-    try:
-        if 'gap_df' in globals() and 'gap_df' is not None and 'Срок' in 'gap_df'.columns and 'Пассивы (%)' in 'gap_df'.columns:
-            liabilities = 'gap_df'.set_index('Срок')['Пассивы (%)']
-        else:
-        # Если gap_df нет или нет колонок – используем заглушку
-            liabilities = pd.Series([5]*7, index=maturity_bins)
-    except:
-        liabilities = pd.Series([5]*7, index=maturity_bins)
-    data_3d = []
-    for bin_name in maturity_bins:
-        data_3d.append({'Срок': bin_name, 'Тип': 'Активы', 'Значение': assets_by_bin[bin_name]})
-        data_3d.append({'Срок': bin_name, 'Тип': 'Пассивы', 'Значение': liabilities[bin_name]})
-        data_3d.append({'Срок': bin_name, 'Тип': 'ГЭП', 'Значение': assets_by_bin[bin_name] - liabilities[bin_name]})
-    df_3d = pd.DataFrame(data_3d)
-    df_3d['Size'] = df_3d['Значение'].abs() + 1
-    fig_3d = px.scatter_3d(df_3d, x='Срок', y='Тип', z='Значение',
-                           color='Тип', size='Size', size_max=15,
-                           title='3D ГЭП: Активы, Пассивы, ГЭП по срокам')
-    st.plotly_chart(fig_3d, use_container_width=True)
-    st.caption("Для 3D-графика активы взяты из портфеля, пассивы — из текущего ГЭП-анализа.")
+ 
+  # ---------- 4. 3D ГЭП ----------
+st.subheader("📊 3D ГЭП-анализ")
+maturity_bins = ['До востребования', 'До 7 дней', '8-30 дней', '1-3 мес', '3-12 мес', '1-5 лет', 'более 5 лет']
+bins_gap = [0, 0.02, 0.08, 0.25, 1, 5, 100, 1000]
+portfolio_gap = portfolio.copy()
+portfolio_gap['bin'] = pd.cut(portfolio_gap['maturity_years'], bins=bins_gap, labels=maturity_bins, right=False)
+assets_by_bin = portfolio_gap.groupby('bin')['weight'].sum().reindex(maturity_bins, fill_value=0)
 
+# Пассивы – берілген gap_df-тен немесе заглушка
+if 'gap_df' in st.session_state and st.session_state.gap_df is not None:
+    gap_data = st.session_state.gap_df
+    if 'Срок' in gap_data.columns and 'Пассивы (%)' in gap_data.columns:
+        liabilities = gap_data.set_index('Срок')['Пассивы (%)']
+    else:
+        liabilities = pd.Series([5]*7, index=maturity_bins)
+else:
+    liabilities = pd.Series([5]*7, index=maturity_bins)
+
+# Деректерді дайындау
+data_3d = []
+for bin_name in maturity_bins:
+    data_3d.append({'Срок': bin_name, 'Тип': 'Активы', 'Значение': assets_by_bin[bin_name]})
+    data_3d.append({'Срок': bin_name, 'Тип': 'Пассивы', 'Значение': liabilities[bin_name]})
+    data_3d.append({'Срок': bin_name, 'Тип': 'ГЭП', 'Значение': assets_by_bin[bin_name] - liabilities[bin_name]})
+
+df_3d = pd.DataFrame(data_3d)
+df_3d['Size'] = df_3d['Значение'].abs() + 1
+
+# График
+fig_3d = px.scatter_3d(df_3d, x='Срок', y='Тип', z='Значение',
+                       color='Тип', size='Size', size_max=15,
+                       title='3D ГЭП: Активы, Пассивы, ГЭП по срокам')
+st.plotly_chart(fig_3d, use_container_width=True)
+st.caption("Для 3D-графика активы взяты из портфеля, пассивы — из текущего ГЭП-анализа.")
 # ================================================================
 # ОСТАЛЬНЫЕ ВКЛАДКИ (без изменений, они уже на русском)
 # ================================================================
