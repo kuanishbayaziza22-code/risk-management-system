@@ -917,7 +917,7 @@ with t_classification:
     
     # Редактируемая таблица
     edited_df = st.data_editor(
-        portfolio[['ticker','rating','stage','macro_k','sppi','business_model','EIR']],
+        portfolio[['ticker','rating','stage','macro_k','sppi','business_model','valuation_category','EIR']],
         num_rows="dynamic",
         use_container_width=True
     )
