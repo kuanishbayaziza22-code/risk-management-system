@@ -393,7 +393,7 @@ with t_vis:
                              title="Корреляция доходностей активов",
                              color_continuous_scale='RdBu_r',
                              zmin=-1, zmax=1)
-        st.plotly_chart(fig_corr, use_container_width=True)
+        st.plotly_chart(fig_corr, use_container_width=True, key="corr_heatmap")
     else:
         st.info("Недостаточно активов для построения тепловой карты корреляции.")
 
@@ -433,7 +433,7 @@ with t_vis:
         fig_var = px.line(var_df, x='Дата', y='VaR (95%)', 
                           title='Ежедневный VaR (скользящее окно 30 дней)',
                           labels={'VaR (95%)': 'VaR, %'})
-        st.plotly_chart(fig_var, use_container_width=True)
+        st.plotly_chart(fig_var, use_container_width=True, key="var_dynamics")
     else:
         st.warning(f"Недостаточно данных для расчёта динамики VaR (нужно > {window_var} дней)")
 
@@ -463,7 +463,7 @@ with t_vis:
     fig_stress = px.bar(df_stress, x='Сценарий', y='Убыток, %', 
                         title='Потери портфеля по сценариям',
                         color='Убыток, %', color_continuous_scale='RdYlGn_r')
-    st.plotly_chart(fig_stress, use_container_width=True)
+    st.plotly_chart(fig_stress, use_container_width=True, key="stress_comparison")
 
     # ---------- 4. 3D ГЭП ----------
     st.subheader("📊 3D ГЭП-анализ")
@@ -490,7 +490,7 @@ with t_vis:
     fig_3d = px.scatter_3d(df_3d, x='Срок', y='Тип', z='Значение',
                            color='Тип', size='Size', size_max=15,
                            title='3D ГЭП: Активы, Пассивы, ГЭП по срокам')
-    st.plotly_chart(fig_3d, use_container_width=True)
+    st.plotly_chart(fig_3d, use_container_width=True, key="gap_3d")
     st.caption("Для 3D-графика активы взяты из портфеля, пассивы — из текущего ГЭП-анализа.")
 
 # ================================================================
@@ -626,7 +626,7 @@ with t_interest:
         fig_gap.add_trace(go.Bar(x=gap_data['Срок'], y=gap_data['Пассивы (%)'], name='Пассивы'))
         fig_gap.add_trace(go.Scatter(x=gap_data['Срок'], y=gap_data['ГЭП (%)'], name='ГЭП', mode='lines+markers'))
         fig_gap.update_layout(title='ГЭП по срокам', xaxis_title='Срок', yaxis_title='% портфеля')
-        st.plotly_chart(fig_gap, use_container_width=True)
+        st.plotly_chart(fig_gap, use_container_width=True, key="gap_plot_interest")
     else:
         st.info("Сначала заполните пассивы во вкладке 'ГЭП (расшир.)'")
         example_gap = pd.DataFrame({
@@ -654,7 +654,7 @@ with t_country:
     st.dataframe(df_country.style.format({'Доля в портфеле (%)':'{:.2f}%','Вклад в страновой риск':'{:.3f}'}))
     st.metric("Суммарный страновой риск", f"{total_country_risk:.3f}")
     fig = px.bar(df_country, x='Страна', y='Вклад в страновой риск', color='Рейтинг риска (1-5)', title='Страновой риск по странам')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="gap_plot_extended")
 
 # ================================================================
 # ВКЛАДКА 9: ГЭП (расшир.)
@@ -681,7 +681,7 @@ with t_gap:
     fig.add_trace(go.Bar(x=gap_df['Срок'], y=gap_df['Пассивы (%)'], name='Пассивы'))
     fig.add_trace(go.Scatter(x=gap_df['Срок'], y=gap_df['ГЭП (%)'], name='ГЭП', mode='lines+markers'))
     fig.update_layout(title='ГЭП по срокам', xaxis_title='Срок', yaxis_title='% портфеля')
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="country_risk_bar")
 
 # ================================================================
 # ВКЛАДКА 10: БЭК-ТЕСТ
@@ -709,7 +709,7 @@ with t_backtest:
         fig.add_trace(go.Scatter(x=df_bt['Дата'], y=df_bt['Прогноз VaR'], mode='lines', name='VaR прогноз'))
         fig.add_trace(go.Scatter(x=df_bt['Дата'], y=df_bt['Факт.убыток'], mode='markers', name='Факт.убыток'))
         fig.update_layout(title='Бэк-тест VaR', xaxis_title='Дата', yaxis_title='Убыток')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="backtest_plot")
         st.dataframe(df_bt.style.format({'Прогноз VaR':'{:.4f}','Факт.убыток':'{:.4f}'}))
 
 # ================================================================
