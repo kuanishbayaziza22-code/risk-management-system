@@ -248,6 +248,9 @@ tabs = st.tabs([
     "📈 Визуализация",
     "📈 Эффективность",
     "💳 Кредит",
+    "💱 Валютный риск",      # <-- жаңа
+    "📈 Рыночный риск",       # <-- жаңа
+    "📊 Процентный риск",     # <-- жаңа
     "🌍 Страновой риск",
     "📊 ГЭП (расшир.)",
     "🔁 Бэк-тест",
@@ -259,7 +262,7 @@ tabs = st.tabs([
     "📊 KRI",                   # <-- жаңа
     "📝 Инциденты"              # <-- жаңа
 ])
-(t_main, t_vis, t_perf, t_credit, t_country, t_gap, t_backtest, t_virtual, t_limits, t_stoploss, t_conclusion, t_classification, t_kri, t_incidents) = tabs
+(t_main, t_vis, t_perf, t_credit, t_currency, t_market, t_interest, t_country, t_gap, t_backtest, t_virtual, t_limits, t_stoploss, t_conclusion, t_classification, t_kri, t_incidents) = tabs
 
 # ================================================================
 # ВКЛАДКА 1: ОСНОВНОЕ
@@ -523,6 +526,198 @@ with t_credit:
         st.bar_chart(ecl_by_stage.set_index('stage'))
     else:
         st.info("ECL әлі есептелмеген. 'Классификация и ОКУ' вкладкасында 'Пересчитать ECL' батырмасын басыңыз.")
+
+# ================================================================
+# ВКЛАДКА: ВАЛЮТНЫЙ РИСК
+# ================================================================
+with t_currency:
+    st.subheader("💱 Валютный риск")
+    st.write("Риск изменения стоимости портфеля из-за колебаний курса USD/KZT.")
+    
+    # 1. Текущий курс
+    current_rate = usd_kzt.iloc[-1]
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Текущий курс USD/KZT", f"{current_rate:.2f}", 
+                delta=f"{current_rate - usd_kzt.iloc[-2]:.2f}" if len(usd_kzt) > 1 else None)
+    
+    # 2. Доля USD
+    usd_share = portfolio[portfolio['currency']=='USD']['weight'].sum()
+    col2.metric("Доля USD в портфеле", f"{usd_share:.2f}%")
+    
+    # 3. Вклад в VaR
+    var_contrib_currency = metrics['var95_pct'] * (usd_share / 100)
+    col3.metric("Вклад валютного риска в VaR", f"{var_contrib_currency:.2f}%")
+    
+    # 4. История курса (график)
+    st.subheader("📈 История курса USD/KZT")
+    fig_rate = px.line(x=usd_kzt.index, y=usd_kzt.values, 
+                       title="USD/KZT курс (последние 100 дней)",
+                       labels={'x': 'Дата', 'y': 'Курс, ₸'})
+    st.plotly_chart(fig_rate, use_container_width=True)
+    
+    # 5. Активы в USD
+    st.subheader("📋 Активы, номинированные в USD")
+    usd_assets = portfolio[portfolio['currency']=='USD']
+    if not usd_assets.empty:
+        st.dataframe(usd_assets[['ticker', 'weight', 'current_price']].style.format({
+            'weight': '{:.2f}%',
+            'current_price': '{:.2f}'
+        }))
+    else:
+        st.info("Нет активов в USD.")
+    
+    st.caption("Валютный риск учитывается при пересчёте всех USD-активов в тенге.")
+
+# ================================================================
+# ВКЛАДКА: РЫНОЧНЫЙ РИСК
+# ================================================================
+with t_market:
+    st.subheader("📈 Рыночный риск (ценовой)")
+    st.write("Риск изменения стоимости портфеля из-за колебаний рыночных цен активов.")
+    
+    # 1. VaR (три вида)
+    st.subheader("📉 Value at Risk (VaR)")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Параметрический VaR (95%)", f"{metrics['var95_pct']:.2f}%", 
+                delta=f"{metrics['var95_money']:,.0f} ₸")
+    col2.metric("Исторический VaR (95%)", f"{metrics['var_hist_pct']:.2f}%", 
+                delta=f"{metrics['var_hist_money']:,.0f} ₸")
+    col3.metric("Параметрический VaR (99%)", f"{metrics['var99_pct']:.2f}%", 
+                delta=f"{metrics['var99_money']:,.0f} ₸")
+    
+    # 2. Стресс-тест (расширенный)
+    st.subheader("🌀 Стресс-тестирование")
+    scenario = st.selectbox("Выберите сценарий", [
+        "Без стресса",
+        "Падение рынка -10%",
+        "Падение рынка -20%",
+        "Падение рынка -30%",
+        "Кризис 2008 (-50%)"
+    ], key="stress_market")
+    
+    shock_map = {
+        "Без стресса": 0.0,
+        "Падение рынка -10%": -0.10,
+        "Падение рынка -20%": -0.20,
+        "Падение рынка -30%": -0.30,
+        "Кризис 2008 (-50%)": -0.50
+    }
+    shock = shock_map[scenario]
+    
+    # Применяем шок
+    last_prices = prices.iloc[-1]
+    new_prices = last_prices * (1 + shock)
+    w = portfolio['weight'].values / 100
+    cur_val = 1_000_000
+    new_val = (new_prices / last_prices) @ w * cur_val
+    loss = cur_val - new_val
+    
+    col1, col2 = st.columns(2)
+    col1.metric("Потери при стрессе", f"{-loss/cur_val:.2%}", delta=f"{-loss:,.0f} ₸")
+    col2.metric("Остаточная стоимость", f"{new_val:,.0f} ₸")
+    
+    # 3. Бэк-тест (краткий)
+    st.subheader("🔁 Краткий бэк-тест")
+    port_ret = metrics['port_ret_kzt']
+    window = 30
+    if len(port_ret) > window:
+        var_forecast = []
+        actual_loss = []
+        for i in range(window, len(port_ret)):
+            hist = port_ret.iloc[i-window:i]
+            mu = hist.mean()
+            sigma = hist.std()
+            var = -(mu - norm.ppf(0.95)*sigma)
+            var_forecast.append(var)
+            actual_loss.append(-port_ret.iloc[i])
+        exceed = np.sum(np.array(actual_loss) > np.array(var_forecast))
+        total = len(actual_loss)
+        st.metric("Превышений VaR (30 дней)", f"{exceed}/{total}", 
+                  delta=f"{exceed/total:.2%} (ожидается ~5%)")
+    else:
+        st.info("Недостаточно данных для бэк-теста.")
+    
+    st.caption("Рыночный риск измеряется через VaR, стресс-тесты и бэк-тестирование.")
+
+# ================================================================
+# ВКЛАДКА: ПРОЦЕНТНЫЙ РИСК
+# ================================================================
+with t_interest:
+    st.subheader("📊 Процентный риск")
+    st.write("Риск изменения стоимости портфеля из-за колебаний процентных ставок.")
+    
+    # 1. ГЭП-анализ
+    st.subheader("📋 ГЭП-анализ (разрыв по срокам)")
+    
+    # Берём данные из ГЭП-вкладки (если есть)
+    if 'gap_df' in st.session_state and st.session_state.gap_df is not None:
+        gap_data = st.session_state.gap_df
+        st.dataframe(gap_data.style.format({
+            'Активы (%)': '{:.2f}%',
+            'Пассивы (%)': '{:.2f}%',
+            'ГЭП (%)': '{:.2f}%'
+        }))
+        
+        # Суммарный ГЭП
+        total_gap = gap_data['ГЭП (%)'].abs().sum()
+        st.metric("Суммарный абсолютный ГЭП", f"{total_gap:.2f}%")
+        
+        # Процентный риск (при изменении ставки на 1%)
+        col1, col2 = st.columns(2)
+        rate_shock = 0.01
+        interest_risk = total_gap * rate_shock
+        col1.metric("Оценка убытка при росте ставки на 1%", f"{interest_risk:.2f}%")
+        
+        # При изменении на 2%
+        rate_shock_2 = 0.02
+        interest_risk_2 = total_gap * rate_shock_2
+        col2.metric("Оценка убытка при росте ставки на 2%", f"{interest_risk_2:.2f}%")
+        
+        # График ГЭП
+        st.subheader("📈 График ГЭП по срокам")
+        fig_gap = go.Figure()
+        fig_gap.add_trace(go.Bar(x=gap_data['Срок'], y=gap_data['Активы (%)'], name='Активы'))
+        fig_gap.add_trace(go.Bar(x=gap_data['Срок'], y=gap_data['Пассивы (%)'], name='Пассивы'))
+        fig_gap.add_trace(go.Scatter(x=gap_data['Срок'], y=gap_data['ГЭП (%)'], name='ГЭП', mode='lines+markers'))
+        fig_gap.update_layout(title='ГЭП по срокам', xaxis_title='Срок', yaxis_title='% портфеля')
+        st.plotly_chart(fig_gap, use_container_width=True)
+        
+    else:
+        st.info("Сначала заполните пассивы во вкладке 'ГЭП (расшир.)'")
+        if st.button("Перейти к заполнению ГЭП"):
+            st.switch_page("full_risk_plus.py")  # не работает в Streamlit, просто напоминание
+        
+        # Заглушка
+        st.subheader("Пример ГЭП-анализа")
+        example_gap = pd.DataFrame({
+            'Срок': ['До востребования', 'До 7 дней', '8-30 дней', '1-3 мес', '3-12 мес', '1-5 лет', 'более 5 лет'],
+            'Активы (%)': [0, 0, 0, 5, 10, 60, 25],
+            'Пассивы (%)': [5, 5, 5, 5, 5, 5, 5]
+        })
+        example_gap['ГЭП (%)'] = example_gap['Активы (%)'] - example_gap['Пассивы (%)']
+        st.dataframe(example_gap.style.format({
+            'Активы (%)': '{:.2f}%',
+            'Пассивы (%)': '{:.2f}%',
+            'ГЭП (%)': '{:.2f}%'
+        }))
+    
+    # 2. Чувствительность к ставке
+    st.subheader("📊 Чувствительность портфеля к ставке")
+    st.write("Оценка изменения стоимости портфеля при изменении процентной ставки.")
+    
+    # Приблизительная оценка (на основе дюрации)
+    if 'maturity_years' in portfolio.columns:
+        avg_maturity = portfolio['maturity_years'].mean()
+        st.metric("Средний срок до погашения", f"{avg_maturity:.2f} лет")
+        
+        # Упрощённая оценка (при изменении ставки на 1%)
+        duration_effect = avg_maturity * 0.01 * 100  # 1% изменение
+        st.metric("Изменение стоимости при росте ставки на 1%", f"≈ {duration_effect:.2f}%")
+    else:
+        st.info("Нет данных о сроках погашения.")
+    
+    st.caption("Процентный риск оценивается через ГЭП-анализ и дюрацию.")
+    
 with t_country:
     st.subheader("🌍 Страновой риск")
     countries = portfolio['country'].unique()
