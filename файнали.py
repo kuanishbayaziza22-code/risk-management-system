@@ -133,7 +133,35 @@ def calc_metrics(portfolio, prices, usd_kzt):
         'annual_return': annual_return,
         'port_ret_local': port_ret
     }
+# ------------------------------------------------------------
+# ДЮРАЦИЯ И АНАЛИЗ ЧУВСТВИТЕЛЬНОСТИ (ПРОЦЕНТНЫЙ РИСК)
+# ------------------------------------------------------------
+def calculate_duration_and_sensitivity(portfolio, prices, usd_kzt, rate_shock=0.01):
+    """
+    Рассчитывает модифицированную дюрацию для облигаций и оценивает
+    изменение стоимости портфеля при изменении процентной ставки.
+    """
+    # Для простоты берем среднюю дюрацию по портфелю (взвешенную по весам)
+    # В реальности нужно брать дюрацию каждого инструмента, но у нас нет этих данных.
+    # Мы используем maturity_years как прокси для дюрации (для демонстрации).
+    if 'maturity_years' not in portfolio.columns or portfolio['maturity_years'].sum() == 0:
+        return None, None
 
+    # Взвешенная средняя дюрация (в годах)
+    weighted_duration = (portfolio['weight'] * portfolio['maturity_years']).sum() / portfolio['weight'].sum()
+    
+    # Модифицированная дюрация (приближенно)
+    # Для облигаций с купоном это более сложная формула, но для MVP используем упрощение
+    # Предполагаем, что YTM = 5% (средняя доходность)
+    ytm = 0.05
+    modified_duration = weighted_duration / (1 + ytm)
+    
+    # Изменение стоимости портфеля при изменении ставки на 1% (100 б.п.)
+    # ΔP = -MD * Δr * P
+    portfolio_value = 1_000_000  # текущая стоимость портфеля
+    price_change = -modified_duration * rate_shock * portfolio_value
+    
+    return modified_duration, price_change
 def get_rating_limit(rating):
     limits = {'AAA': 30, 'AA': 25, 'A': 20, 'BBB': 15, 'BB': 10, 'B': 5}
     return limits.get(rating, 10)
@@ -335,7 +363,50 @@ with t_main:
         else:  # stage == 3
             ECL = EAD * row['LGD_case_specific']
         return ECL
+# ================================================================
+# ВКЛАДКА: РЕГИСТР РИСКОВ
+# ================================================================
+with t_risk_register:
+    st.subheader("📋 Регистр рисков (интегрированный)")
+    st.write("Автоматически обновляемый регистр с привязкой к текущим количественным оценкам.")
+
+    # Базовый регистр (из документов)
+    if 'risk_register' not in st.session_state:
+        st.session_state.risk_register = pd.DataFrame({
+            "ID": [1, 2, 3, 4, 5],
+            "Наименование риска": [
+                "Рыночный риск (ценовой)",
+                "Валютный риск",
+                "Процентный риск",
+                "Кредитный риск",
+                "Операционный риск"
+            ],
+            "Категория": ["Рыночный", "Рыночный", "Рыночный", "Кредитный", "Операционный"],
+            "Владелец": ["Департамент управления активами"] * 5,
+            "Текущий уровень (количественный)": [
+                f"{metrics['var95_pct']:.2f}%",
+                f"{metrics['var95_pct'] * (portfolio['currency']=='USD').mean():.2f}%",
+                "Не рассчитан",
+                f"{df_cr['expected_loss'].sum():,.0f} ₸",
+                f"{len(st.session_state.get('incidents', pd.DataFrame()))} инцидентов"
+            ],
+            "Оценка (приоритет)": ["Высокий", "Высокий", "Средний", "Высокий", "Средний"],
+            "Статус": ["Активен", "Активен", "Активен", "Активен", "Активен"]
+        })
     
+    st.dataframe(st.session_state.risk_register, use_container_width=True)
+    
+    # Кнопка обновления из текущих данных
+    if st.button("🔄 Обновить регистр из текущих данных"):
+        # Обновляем количественные оценки
+        df_reg = st.session_state.risk_register.copy()
+        df_reg.loc[df_reg['Наименование риска'] == "Рыночный риск (ценовой)", "Текущий уровень (количественный)"] = f"{metrics['var95_pct']:.2f}%"
+        df_reg.loc[df_reg['Наименование риска'] == "Валютный риск", "Текущий уровень (количественный)"] = f"{metrics['var95_pct'] * (portfolio['currency']=='USD').mean():.2f}%"
+        df_reg.loc[df_reg['Наименование риска'] == "Кредитный риск", "Текущий уровень (количественный)"] = f"{df_cr['expected_loss'].sum():,.0f} ₸"
+        df_reg.loc[df_reg['Наименование риска'] == "Операционный риск", "Текущий уровень (количественный)"] = f"{len(st.session_state.get('incidents', pd.DataFrame()))} инцидентов"
+        st.session_state.risk_register = df_reg
+        st.success("✅ Регистр обновлен")
+        st.rerun()    
 # ================================================================
 # ВКЛАДКА 2: ВИЗУАЛИЗАЦИЯ
 # ================================================================
@@ -944,7 +1015,39 @@ with t_limits:
         st.warning(f"НВА = {hva_share:.2f}% < {limit_hva}% (нарушение)")
     else:
         st.success(f"НВА = {hva_share:.2f}% >= {limit_hva}% (соблюдено)")
+# ---------- РАСШИРЕННЫЕ НАСТРОЙКИ ЛИМИТОВ ----------
+with st.expander("⚙️ Настройка лимитов"):
+    st.write("Измените значения лимитов для валют, секторов и стран.")
 
+    col1, col2 = st.columns(2)
+    with col1:
+        new_usd_limit = st.number_input("Лимит USD (%)", min_value=0, max_value=100, value=60, key="usd_limit")
+        new_energy_limit = st.number_input("Лимит Energy (%)", min_value=0, max_value=100, value=25, key="energy_limit")
+    with col2:
+        new_tech_limit = st.number_input("Лимит Tech (%)", min_value=0, max_value=100, value=30, key="tech_limit")
+        new_us_country_limit = st.number_input("Лимит US (%)", min_value=0, max_value=100, value=50, key="us_country_limit")
+
+    if st.button("Применить новые лимиты"):
+        # Сохраняем в session_state
+        st.session_state.limits_override = {
+            'currency': {'USD': new_usd_limit, 'KZT': 70},
+            'sector': {'Tech': new_tech_limit, 'Energy': new_energy_limit, 'Finance': 40, 'Gov': 20, 'Consumer': 30, 'Other': 20},
+            'country': {'US': new_us_country_limit, 'KZ': 40, 'EU': 30, 'CN': 20}
+        }
+        st.success("✅ Лимиты обновлены")
+        st.rerun()
+
+# Использование переопределенных лимитов (в функции check_limit)
+def get_limits():
+    if 'limits_override' in st.session_state:
+        return st.session_state.limits_override
+    else:
+        return {
+            'asset_type': {'Акции':50, 'Облигации':60, 'Депозит':30},
+            'currency': {'USD':60, 'KZT':70},
+            'sector': {'Tech':30, 'Finance':40, 'Energy':25, 'Gov':20, 'Consumer':30, 'Other':20},
+            'country': {'US':50, 'KZ':40, 'EU':30, 'CN':20}
+        }
 with t_stoploss:
     st.subheader("🛑 Stop-loss / Take-profit")
     if 'stop_loss' not in st.session_state:
@@ -1109,7 +1212,124 @@ with t_conclusion:
         report_text += f"ECL: {total_ecl:,.0f} ₸\n"
         report_text += f"Нарушений: {violations_count}\n"
         st.download_button("Скачать", report_text, file_name=f"report_{datetime.now().strftime('%Y%m%d')}.txt")
+# ================================================================
+# ВКЛАДКА: КАЧЕСТВЕННАЯ ОЦЕНКА РИСКОВ
+# ================================================================
+with t_risk_assessment:
+    st.subheader("📋 Качественная оценка рисков")
+    st.write("Оцените риски по шкале вероятности (1-5) и влияния (1-5).")
 
+    # Инициализация данных для оценки, если их нет
+    if 'risk_assessment' not in st.session_state:
+        # Базовые риски из документов
+        risks = [
+            "Рыночный риск (ценовой)",
+            "Валютный риск",
+            "Процентный риск",
+            "Кредитный риск",
+            "Операционный риск",
+            "Риск ликвидности"
+        ]
+        st.session_state.risk_assessment = pd.DataFrame({
+            "Риск": risks,
+            "Вероятность (1-5)": [3] * len(risks),
+            "Влияние (1-5)": [3] * len(risks)
+        })
+
+    # Редактируемая таблица
+    edited_risks = st.data_editor(
+        st.session_state.risk_assessment,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Вероятность (1-5)": st.column_config.NumberColumn("Вероятность (1-5)", min_value=1, max_value=5, step=1),
+            "Влияние (1-5)": st.column_config.NumberColumn("Влияние (1-5)", min_value=1, max_value=5, step=1)
+        }
+    )
+    
+    if st.button("Сохранить оценку"):
+        st.session_state.risk_assessment = edited_risks
+        st.success("✅ Оценка сохранена")
+    
+    # Визуализация матрицы
+    st.subheader("📊 Матрица рисков")
+    if not st.session_state.risk_assessment.empty:
+        # Вычисляем уровень риска (вероятность * влияние)
+        st.session_state.risk_assessment["Уровень"] = (
+            st.session_state.risk_assessment["Вероятность (1-5)"] * 
+            st.session_state.risk_assessment["Влияние (1-5)"]
+        )
+        # Цветовая индикация
+        def color_risk(val):
+            if val >= 20:
+                return "background-color: #ffcccc"  # красный
+            elif val >= 12:
+                return "background-color: #ffffcc"  # желтый
+            else:
+                return "background-color: #ccffcc"  # зеленый
+        st.dataframe(
+            st.session_state.risk_assessment.style.applymap(color_risk, subset=["Уровень"])
+        )
+    # ---------- РИСК-АППЕТИТ (RAS) ----------
+st.subheader("🎯 Риск-аппетит (целевые уровни)")
+# Загружаем целевые значения из документа (приложение 1 к Правилам)
+ras_targets = {
+    "VaR 95% (дневной)": {"target": 2.0, "warning": 1.5},  # % от капитала
+    "Концентрация на эмитента": {"target": 5.0, "warning": 4.0},  # % от AUM
+    "Доля активов с рейтингом ниже BBB-": {"target": 15.0, "warning": 12.0},  # % от AUM
+    "Доля высоколиквидных активов (HQLA)": {"target": 20.0, "warning": 25.0},  # % от AUM
+}
+
+# Текущие значения из метрик
+current_var = metrics['var95_pct']
+max_concentration = portfolio['weight'].max()
+low_rating_share = portfolio[portfolio['rating'].isin(['BB', 'B'])]['weight'].sum()
+hva_share = portfolio[(portfolio['rating']=='AAA') & (portfolio['maturity_years']<1)]['weight'].sum()
+
+# Сравнение
+ras_data = {
+    "Показатель": list(ras_targets.keys()),
+    "Текущее значение": [
+        f"{current_var:.2f}%",
+        f"{max_concentration:.2f}%",
+        f"{low_rating_share:.2f}%",
+        f"{hva_share:.2f}%"
+    ],
+    "Целевое": [f"{v['target']}%" for v in ras_targets.values()],
+    "Предупреждение": [f"{v['warning']}%" for v in ras_targets.values()],
+    "Статус": []
+}
+
+# Определяем статус (зеленый/желтый/красный)
+for i, key in enumerate(ras_targets.keys()):
+    if key == "VaR 95% (дневной)":
+        val = current_var
+    elif key == "Концентрация на эмитента":
+        val = max_concentration
+    elif key == "Доля активов с рейтингом ниже BBB-":
+        val = low_rating_share
+    else:  # HQLA
+        val = hva_share
+
+    target = ras_targets[key]['target']
+    warning = ras_targets[key]['warning']
+    if key == "Доля высоколиквидных активов (HQLA)":
+        # Для HQLA: чем больше, тем лучше
+        if val >= target:
+            ras_data["Статус"].append("🟢")
+        elif val >= warning:
+            ras_data["Статус"].append("🟡")
+        else:
+            ras_data["Статус"].append("🔴")
+    else:
+        if val <= target:
+            ras_data["Статус"].append("🟢")
+        elif val <= warning:
+            ras_data["Статус"].append("🟡")
+        else:
+            ras_data["Статус"].append("🔴")
+
+st.table(pd.DataFrame(ras_data))
 # ================================================================
 # ВКЛАДКА: КЛАССИФИКАЦИЯ И ОКУ
 # ================================================================
@@ -1398,3 +1618,13 @@ st.sidebar.write("---")
 st.sidebar.write("📊 **Полная система риск-менеджмента (MVP)**")
 st.sidebar.write("Синтетические данные. Для реальной работы замените генерацию на загрузку из CSV.")
 st.sidebar.write(f"Дата расчёта: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+# ---------- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ ДАННЫХ ----------
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔄 Обновление данных")
+if st.sidebar.button("📥 Обновить данные за сегодня"):
+    # Здесь можно добавить логику пересчета цен и метрик
+    # Для демонстрации просто пересчитываем метрики
+    st.session_state.portfolio = portfolio  # обновляем портфель
+    st.session_state.metrics = calc_metrics(portfolio, prices, usd_kzt)
+    st.sidebar.success("✅ Данные обновлены")
+    st.rerun()
